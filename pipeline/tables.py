@@ -33,7 +33,7 @@ TABLES: dict[str, Table] = {t.name: t for t in [
           (("CustomerId", "INTEGER"), ("FirstName", "VARCHAR"), ("LastName", "VARCHAR"), ("Email", "VARCHAR"),
            ("Phone", "VARCHAR"), ("DateOfBirth", "DATE"), ("TaxId", "VARCHAR"), ("AddressLine", "VARCHAR"),
            ("City", "VARCHAR"), ("State", "VARCHAR"), ("ZipCode", "VARCHAR"), ("CreatedAt", "TIMESTAMP"),
-           ("UpdatedAt", "TIMESTAMP")),
+           ("UpdatedAt", "TIMESTAMP"), ("MergedIntoCustomerId", "INTEGER"), ("IdentityHold", "VARCHAR")),
           CHANGE_TRACKING, updated_at="UpdatedAt", created_at="CreatedAt"),
     Table("Advances", "AdvanceId",
           (("AdvanceId", "INTEGER"), ("CustomerId", "INTEGER"), ("Amount", "DECIMAL(12,2)"),

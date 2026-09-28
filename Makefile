@@ -1,7 +1,7 @@
 RUN  = docker compose exec -T pipeline python -m
 DAYS ?= 1
 
-.PHONY: up down reset ping seed mutate measure load status crash-demo check break repair break-demo
+.PHONY: up down reset ping seed mutate measure load status crash-demo check break repair break-demo dedupe-plan dedupe-apply dedupe-undo demo
 
 up:            ## Start SQL Server + pipeline container (waits until SQL Server is healthy)
 	docker compose up -d --build --wait
@@ -54,6 +54,36 @@ break-demo: up  ## Full demo: check passes, break it, check fails, repair, check
 	@printf "\n>>> 4. Repair only the flagged rows\n"
 	$(RUN) pipeline.check repair
 	@printf "\n>>> 5. Check once more\n"
+	$(RUN) pipeline.check
+
+dedupe-plan: up ## Classify customers, pick survivors, build the review queue. Read-only
+	$(RUN) pipeline.dedupe plan
+
+dedupe-apply: up ## Execute the plan in the source (one transaction, fully logged) + unique TaxId index
+	$(RUN) pipeline.dedupe apply
+
+dedupe-undo: up ## Reverse every applied merge from dbo.CustomerMerges and drop the unique index
+	$(RUN) pipeline.dedupe undo
+
+demo: up        ## Everything, from a fresh source: measure, load, change, check, dedupe, prevent
+	@printf "\n=== Seed a fresh source database ===\n"
+	$(RUN) pipeline.seed
+	@printf "\n=== Measure one day of change before deciding anything ===\n"
+	$(MAKE) --no-print-directory measure
+	@printf "\n=== Initial load, then a normal business day and an incremental load ===\n"
+	$(RUN) pipeline.load
+	$(RUN) pipeline.mutate
+	$(RUN) pipeline.load
+	@printf "\n=== Is the warehouse complete and correct? ===\n"
+	$(RUN) pipeline.check
+	@printf "\n=== Resolve duplicate customers ===\n"
+	$(RUN) pipeline.dedupe plan
+	$(RUN) pipeline.dedupe apply
+	$(RUN) pipeline.load
+	$(RUN) pipeline.check
+	@printf "\n=== Next day: re-registrations are now rejected by the database ===\n"
+	$(RUN) pipeline.mutate
+	$(RUN) pipeline.load
 	$(RUN) pipeline.check
 
 down:          ## Stop containers, keep data

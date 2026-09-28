@@ -60,6 +60,13 @@ CLEAN_VIEWS = [
        SELECT TransactionId, TRY_CAST(TRIM(AdvanceRef) AS INTEGER) AS AdvanceId, AdvanceRef AS AdvanceRefRaw,
               CustomerId, Type, Amount, Status, CreatedAt
        FROM raw.Transactions""",
+    # One row per customer record, with the person it belongs to after identity resolution:
+    # merged duplicates point to their survivor; held records (same person, not merged) to the oldest.
+    """CREATE OR REPLACE VIEW clean.customers AS
+       SELECT *, CASE WHEN MergedIntoCustomerId IS NOT NULL THEN MergedIntoCustomerId
+                      WHEN IdentityHold IS NOT NULL THEN MIN(CustomerId) OVER (PARTITION BY TaxId)
+                      ELSE CustomerId END AS PersonId
+       FROM raw.Customers""",
 ]
 
 

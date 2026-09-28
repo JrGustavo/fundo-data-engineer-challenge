@@ -17,6 +17,8 @@ import random
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 
+import pymssql
+
 from pipeline import config
 from pipeline.seed import SEED, Generator
 
@@ -46,7 +48,7 @@ def main() -> None:
             stats[key] = stats.get(key, 0) + n
 
         # ---- Customers: sign-ups, some of them re-registrations of an existing person
-        with_taxid = ids(cur, "SELECT CustomerId FROM dbo.Customers WHERE TaxId IS NOT NULL ORDER BY CustomerId")
+        with_taxid = ids(cur, "SELECT CustomerId FROM dbo.Customers WHERE TaxId IS NOT NULL AND MergedIntoCustomerId IS NULL ORDER BY CustomerId")
         for i in range(12):
             if i < 2:
                 cur.execute("SELECT FirstName, LastName, Email, Phone, DateOfBirth, TaxId, AddressLine, City, State, ZipCode "
@@ -60,13 +62,17 @@ def main() -> None:
                 row = tuple(p[c] for c in ["FirstName", "LastName", "Email", "Phone", "DateOfBirth", "TaxId",
                                            "AddressLine", "City", "State", "ZipCode"])
             now = ts()
-            cur.execute("INSERT INTO dbo.Customers (FirstName, LastName, Email, Phone, DateOfBirth, TaxId, AddressLine, "
-                        "City, State, ZipCode, CreatedAt, UpdatedAt) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                        row + (now, now))
-            count("customers_inserted")
+            try:
+                cur.execute("INSERT INTO dbo.Customers (FirstName, LastName, Email, Phone, DateOfBirth, TaxId, AddressLine, "
+                            "City, State, ZipCode, CreatedAt, UpdatedAt) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                            row + (now, now))
+                count("customers_inserted")
+            except pymssql.IntegrityError:
+                # After `make dedupe-apply`, a unique index on active TaxIds rejects re-registrations.
+                count("reregistrations_blocked_by_unique_taxid")
 
         # ---- Customers: contact updates (history row always written; UpdatedAt sometimes forgotten)
-        all_customers = ids(cur, "SELECT CustomerId FROM dbo.Customers ORDER BY CustomerId")
+        all_customers = ids(cur, "SELECT CustomerId FROM dbo.Customers WHERE MergedIntoCustomerId IS NULL ORDER BY CustomerId")
         for cid in rng.sample(all_customers, 40):
             field = rng.choice(["Email", "Phone", "AddressLine"])
             new = gen.person(ts())[field]
@@ -86,7 +92,7 @@ def main() -> None:
         # ---- Customers: account closures (only customers with no advances can be deleted)
         closable = ids(cur, "SELECT c.CustomerId FROM dbo.Customers c WHERE NOT EXISTS "
                             "(SELECT 1 FROM dbo.Advances a WHERE a.CustomerId = c.CustomerId) "
-                            "AND c.Email NOT LIKE '%%@fundo.com' ORDER BY c.CustomerId")
+                            "AND c.MergedIntoCustomerId IS NULL AND c.Email NOT LIKE '%%@fundo.com' ORDER BY c.CustomerId")
         for cid in rng.sample(closable, 2):
             cur.execute("DELETE FROM dbo.Cards WHERE CustomerId = %s", (cid,))
             count("cards_deleted", cur.rowcount)
@@ -94,7 +100,7 @@ def main() -> None:
             count("customers_deleted")
 
         # ---- Advances: new applications and status transitions
-        all_customers = ids(cur, "SELECT CustomerId FROM dbo.Customers ORDER BY CustomerId")
+        all_customers = ids(cur, "SELECT CustomerId FROM dbo.Customers WHERE MergedIntoCustomerId IS NULL ORDER BY CustomerId")
         for cid in rng.sample(all_customers, 15):
             now = ts()
             cur.execute("INSERT INTO dbo.Advances (CustomerId, Amount, FactorRate, Status, CreatedAt, UpdatedAt) "

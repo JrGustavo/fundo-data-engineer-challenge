@@ -20,7 +20,10 @@ CREATE TABLE dbo.Customers (
     State        CHAR(2)       NULL,
     ZipCode      VARCHAR(10)   NULL,
     CreatedAt    DATETIME2(0)  NOT NULL,
-    UpdatedAt    DATETIME2(0)  NOT NULL
+    UpdatedAt    DATETIME2(0)  NOT NULL,
+    -- Identity resolution (step 6). NULL on every row until a merge is applied.
+    MergedIntoCustomerId INT         NULL,   -- set on a duplicate that was merged into a survivor
+    IdentityHold         VARCHAR(40) NULL    -- same person, deliberately NOT merged, pending human review
 );
 GO
 
@@ -78,6 +81,19 @@ CREATE TABLE dbo.tmp_marketing_export_2023 (
     FirstName    NVARCHAR(100) NULL,
     Segment      VARCHAR(20)   NULL,
     ExportedAt   DATETIME2(0)  NULL
+);
+GO
+
+-- Audit trail of identity merges: every re-pointed row is recorded so a merge can be undone.
+CREATE TABLE dbo.CustomerMerges (
+    MergeLogId        BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_CustomerMerges PRIMARY KEY,
+    MergedCustomerId  INT          NOT NULL,
+    SurvivorCustomerId INT         NOT NULL,
+    EntityTable       VARCHAR(20)  NOT NULL,   -- Customers, Advances, Cards, Transactions
+    EntityId          BIGINT       NOT NULL,
+    PreviousIsDefault BIT          NULL,       -- Cards only
+    MergedAt          DATETIME2(0) NOT NULL,
+    UndoneAt          DATETIME2(0) NULL
 );
 GO
 
