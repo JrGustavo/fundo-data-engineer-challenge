@@ -1,7 +1,7 @@
 RUN  = docker compose exec -T pipeline python -m
 DAYS ?= 1
 
-.PHONY: up down reset ping seed mutate measure
+.PHONY: up down reset ping seed mutate measure load status crash-demo
 
 up:            ## Start SQL Server + pipeline container (waits until SQL Server is healthy)
 	docker compose up -d --build --wait
@@ -19,6 +19,21 @@ measure: up     ## Snapshot the source, simulate one day, report real change rat
 	$(RUN) pipeline.profile baseline
 	$(RUN) pipeline.mutate
 	$(RUN) pipeline.profile report
+
+load: up        ## Load the warehouse: initial load the first time, incremental afterwards
+	$(RUN) pipeline.load
+
+status: up      ## Show watermarks and the last table loads
+	$(RUN) pipeline.load status
+
+crash-demo: up  ## Simulate a day, crash while loading Transactions, show state, then recover
+	$(RUN) pipeline.mutate
+	@printf "\n>>> Loading with a simulated crash in Transactions (this failure is expected)\n"
+	-docker compose exec -T -e CRASH_AT=Transactions pipeline python -m pipeline.load
+	@printf "\n>>> State after the crash: Transactions watermark did not move\n"
+	$(RUN) pipeline.load status
+	@printf "\n>>> Re-running the load: it resumes from the old Transactions watermark\n"
+	$(RUN) pipeline.load
 
 down:          ## Stop containers, keep data
 	docker compose down
