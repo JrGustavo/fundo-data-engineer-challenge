@@ -1,0 +1,41 @@
+services:
+  mssql:
+    # SQL Server 2022 only ships amd64 images. On Apple Silicon it runs through
+    # Docker Desktop's Rosetta emulation; on x86 machines this line is a no-op.
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Fundo_Local_2026!}
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -b -Q 'SELECT 1' -o /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  pipeline:
+    build: .
+    depends_on:
+      mssql:
+        condition: service_healthy
+    environment:
+      SRC_HOST: mssql
+      SRC_PORT: "1433"
+      SRC_USER: sa
+      SRC_PASSWORD: ${MSSQL_SA_PASSWORD:-Fundo_Local_2026!}
+      SRC_DB: FundoOps
+      WAREHOUSE_PATH: /app/data/warehouse.duckdb
+    volumes:
+      - ./:/app
+    working_dir: /app
+    # Idle container; every step runs through `docker compose exec` (see Makefile).
+    command: ["sleep", "infinity"]
+
+volumes:
+  mssql-data:
