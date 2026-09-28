@@ -187,13 +187,15 @@ def report(wh, lookalikes: tuple[int, int]) -> None:
     print(f"  same full name, different TaxIds        {lookalikes[1]:>6,}   -> why a name can only ever suggest a match")
     print(f"  review queue (no TaxId on one side)     {n['queue']:>6,}   ({n['likely']} likely, rest possible)")
 
-    print("\nCases worth a look:")
-    for row in wh.execute("""SELECT TaxId, list(CustomerId || ':' || action ORDER BY CustomerId), any_value(reason)
-                             FROM dedupe.plan GROUP BY TaxId
-                             HAVING bool_or(action LIKE 'hold%') OR bool_or(reason LIKE '%not the oldest%')
-                             ORDER BY 1""").fetchall():
-        reason = wh.execute("SELECT reason FROM dedupe.plan WHERE TaxId = ? AND action IN ('survivor', 'hold_keep')", [row[0]]).fetchone()[0]
-        print(f"  TaxId {row[0]}: {row[1]}  <- {reason}")
+    print("\nCases worth a look (first 5 of each; everything is in dedupe.plan):")
+    for label, cond in [("held for review", "bool_or(action LIKE 'hold%')"),
+                        ("survivor is NOT the oldest record", "bool_or(reason LIKE '%not the oldest%')")]:
+        rows = wh.execute(f"""SELECT TaxId, list(CustomerId || ':' || action ORDER BY CustomerId),
+                                     max(CASE WHEN action IN ('survivor', 'hold_keep') THEN reason END)
+                              FROM dedupe.plan GROUP BY TaxId HAVING {cond} ORDER BY min(CustomerId)""").fetchall()
+        print(f"  {label}: {len(rows)} groups")
+        for taxid, members, reason in rows[:5]:
+            print(f"    {members}  <- {reason}")
     print("\n  Test-pattern accounts kept for review:")
     kept = wh.execute("SELECT CustomerId, Email FROM dedupe.test_accounts WHERE action LIKE 'review%'").fetchall()
     for row in kept:
