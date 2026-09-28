@@ -37,7 +37,7 @@ from pipeline import config
 from pipeline.arrow import to_arrow
 from pipeline.tables import APPEND_ONLY, CHANGE_TRACKING, TABLES, Table
 
-APPEND_OVERLAP = 500   # re-read this many ids below the high-water mark (out-of-order identity commits)
+APPEND_OVERLAP = 100   # re-read ids below the high-water mark (out-of-order identity commits); tuned from 500 after measuring its cost
 
 META_DDL = [
     "CREATE SCHEMA IF NOT EXISTS raw",
