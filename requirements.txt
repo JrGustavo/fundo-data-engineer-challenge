@@ -1,2 +1,3 @@
 pymssql==2.3.13
 duckdb==1.5.5
+pyarrow==25.0.1
